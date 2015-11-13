@@ -7,6 +7,16 @@ module LargeObjectStore
     RailsWrapper.new(store)
   end
 
+  class CompressedEntry
+    def initialize(value)
+      @compressed_value = Zlib::Deflate.deflate(Marshal.dump(value))
+    end
+
+    def decompress
+      Marshal.load(Zlib::Inflate.inflate(@compressed_value))
+    end
+  end
+
   class RailsWrapper
     attr_reader :store
 
@@ -17,8 +27,9 @@ module LargeObjectStore
     end
 
     def write(key, value, options = {})
+      value = CompressedEntry.new(value) if options.delete(:compress)
+
       value = Marshal.dump(value)
-      value = Zlib::Deflate.deflate(value) if options.delete(:compress)
 
       # store number of pages
       pages = (value.size / LIMIT.to_f).ceil
@@ -56,11 +67,13 @@ module LargeObjectStore
         slices.join("")
       end
 
-      if data.getbyte(0) == 0x78 && [0x01,0x9C,0xDA].include?(data.getbyte(1))
-        data = Zlib::Inflate.inflate(data)
-      end
+      data = Marshal.load(data)
 
-      Marshal.load(data)
+      if data.is_a? CompressedEntry
+        data.decompress
+      else
+        data
+      end
     end
 
     def fetch(key, options={})
