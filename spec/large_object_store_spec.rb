@@ -102,15 +102,17 @@ describe LargeObjectStore do
   it "can read/write compressed objects" do
     s = "compress me"
     store.write("a", s, :compress => true).should == true
-    store.store.read("a_0").should == Zlib::Deflate.deflate(Marshal.dump(s))
     store.read("a").should == s
+    store.store.read("a_0").should == Marshal.dump(LargeObjectStore::CompressedEntry.new(s))
   end
 
   it "can read/write giant compressed objects" do
     s = SecureRandom.hex(5_000_000)
     store.write("a", s, :compress => true).should == true
-    store.store.read("a_0").should_not == ["a_0"]
-    store.store.read("a_1").should start_with "x" # zlib magic
+    num_pages = store.store.read("a_0")
+    num_pages.should be_an_instance_of Fixnum
+    data = Marshal.load((1..num_pages).map { |i| store.store.read("a_#{i}") }.join)
+    data.should be_an_instance_of LargeObjectStore::CompressedEntry
     store.read("a").should == s
   end
 
