@@ -61,17 +61,22 @@ module LargeObjectStore
       pages = @store.read("#{key}_0")
       return if pages.nil?
 
-      data = if pages.is_a?(String)
-        pages
-      else
+      data = if pages.is_a?(Fixnum)
         # read sliced data
         keys = Array.new(pages).each_with_index.map{|_,i| "#{key}_#{i+1}" }
         slices = @store.read_multi(*keys).values
         return nil if slices.compact.size < pages
         slices.join("")
+      else
+        pages
       end
 
-      data = Marshal.load(data)
+      begin
+        data = Marshal.load(data)
+      rescue Exception => e
+        Rails.logger.error "Cannot read large_object_store key #{key} : #{e.message} #{e.backtrace.inspect}"
+        return nil
+      end
 
       if data.is_a? CompressedEntry
         data.decompress
